@@ -36,6 +36,7 @@ import { posthog, isPostHogEnabled, identify, resetIdentity, track } from '@/lib
 import { configureRevenueCat, loginRevenueCat, logoutRevenueCat } from '@/lib/purchases'
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext'
 import { ToastProvider } from '@/contexts/ToastContext'
+import { StressProvider } from '@/contexts/StressContext'
 import i18n, { initI18n } from '@/lib/i18n'
 import OfflineBanner from '@/components/OfflineBanner'
 import OfflineOverlay from '@/components/OfflineOverlay'
@@ -146,8 +147,9 @@ function RootLayout() {
     configureRevenueCat()
 
     if (!isSupabaseEnabled) {
-      // No credentials — stay on landing page, no errors thrown
-      setIsAuthed(false)
+      // No credentials — skip auth and go directly to stress monitor
+      setIsAuthed(true)
+      setOnboardingCompleted(true)
       return
     }
 
@@ -217,6 +219,7 @@ function RootLayout() {
           <QueryClientProvider client={queryClient}>
           <SubscriptionProvider>
             <ToastProvider>
+            <StressProvider>
             <SafeAreaProvider>
               <GestureHandlerRootView style={{ flex: 1, backgroundColor: BG }}>
                 <BottomSheetModalProvider>
@@ -267,6 +270,7 @@ function RootLayout() {
                 </BottomSheetModalProvider>
               </GestureHandlerRootView>
             </SafeAreaProvider>
+            </StressProvider>
             </ToastProvider>
           </SubscriptionProvider>
           </QueryClientProvider>

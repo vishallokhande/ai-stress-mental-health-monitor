@@ -1,171 +1,400 @@
-import { useMemo, useState } from 'react'
-import { View, ScrollView, StyleSheet, RefreshControl, Pressable } from 'react-native'
-import { router } from 'expo-router'
+import { useEffect, useRef } from 'react'
+import { View, ScrollView, StyleSheet, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useQueryClient } from '@tanstack/react-query'
-import { Ionicons } from '@expo/vector-icons'
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withRepeat,
+  withSequence,
+  Easing,
+} from 'react-native-reanimated'
+import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop, Line, Rect, Text as SvgText } from 'react-native-svg'
 import { Text } from '@/components/ui/Text'
 import { Card } from '@/components/ui/Card'
-import StatusBadge from '@/components/ui/StatusBadge'
 import {
-    ACCENT,
-    ACCENT_DIM,
-    BG,
-    TEXT_SECONDARY,
-    TEXT_TERTIARY,
+  BG,
+  SURFACE,
+  BORDER,
+  TEXT_PRIMARY,
+  TEXT_SECONDARY,
+  TEXT_TERTIARY,
+  ACCENT,
 } from '@/lib/theme'
 import { TAB_BAR_CLEARANCE } from '@/components/TabBar'
-import { insightCards, statusLabel } from '@/lib/mockData'
-import { useItems } from '@/hooks/useItems'
-import { useActivityFeed } from '@/hooks/useActivityFeed'
-import { useProfile } from '@/hooks/useProfile'
+import { useStress, getStressColor, getStressGradient } from '@/contexts/StressContext'
+
+// ─── Circular Stress Score Gauge ──────────────────────────────────────────────
+
+const GAUGE_SIZE = 200
+const STROKE_WIDTH = 14
+const RADIUS = (GAUGE_SIZE - STROKE_WIDTH) / 2
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+
+function StressGauge({ score }: { score: number }) {
+  const progress = useSharedValue(0)
+  const pulseScale = useSharedValue(1)
+  const color = getStressColor(score)
+  const [gradStart, gradEnd] = getStressGradient(score)
+
+  useEffect(() => {
+    progress.value = withTiming(score / 100, {
+      duration: 1200,
+      easing: Easing.out(Easing.cubic),
+    })
+    pulseScale.value = withRepeat(
+      withSequence(
+        withTiming(1.04, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
+    )
+  }, [score])
+
+  const animatedPulse = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }))
+
+  const strokeDashoffset = CIRCUMFERENCE * (1 - score / 100)
+
+  const levelLabel =
+    score <= 25 ? 'Relaxed' :
+    score <= 50 ? 'Moderate' :
+    score <= 75 ? 'Elevated' :
+    'High Stress'
+
+  return (
+    <View style={gaugeStyles.container}>
+      <Animated.View style={[gaugeStyles.gaugeWrap, animatedPulse]}>
+        {/* Glow effect */}
+        <View style={[gaugeStyles.glow, { backgroundColor: color, shadowColor: color }]} />
+
+        <Svg width={GAUGE_SIZE} height={GAUGE_SIZE}>
+          <Defs>
+            <SvgGradient id="scoreGrad" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0" stopColor={gradStart} />
+              <Stop offset="1" stopColor={gradEnd} />
+            </SvgGradient>
+          </Defs>
+
+          {/* Background circle */}
+          <Circle
+            cx={GAUGE_SIZE / 2}
+            cy={GAUGE_SIZE / 2}
+            r={RADIUS}
+            stroke="rgba(255,255,255,0.06)"
+            strokeWidth={STROKE_WIDTH}
+            fill="none"
+          />
+
+          {/* Progress circle */}
+          <Circle
+            cx={GAUGE_SIZE / 2}
+            cy={GAUGE_SIZE / 2}
+            r={RADIUS}
+            stroke="url(#scoreGrad)"
+            strokeWidth={STROKE_WIDTH}
+            fill="none"
+            strokeDasharray={`${CIRCUMFERENCE}`}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            rotation="-90"
+            originX={GAUGE_SIZE / 2}
+            originY={GAUGE_SIZE / 2}
+          />
+        </Svg>
+
+        {/* Center text */}
+        <View style={gaugeStyles.centerText}>
+          <Text style={[gaugeStyles.scoreValue, { color }]}>{score}</Text>
+          <Text style={gaugeStyles.scoreLabel}>{levelLabel}</Text>
+        </View>
+      </Animated.View>
+    </View>
+  )
+}
+
+const gaugeStyles = StyleSheet.create({
+  container: { alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
+  gaugeWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  glow: {
+    position: 'absolute',
+    width: GAUGE_SIZE * 0.6,
+    height: GAUGE_SIZE * 0.6,
+    borderRadius: GAUGE_SIZE * 0.3,
+    opacity: 0.15,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 40,
+    elevation: 0,
+  },
+  centerText: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreValue: {
+    fontSize: 48,
+    fontWeight: '800',
+    letterSpacing: -2,
+  },
+  scoreLabel: {
+    fontSize: 13,
+    color: TEXT_SECONDARY,
+    fontWeight: '600',
+    marginTop: -2,
+  },
+})
+
+// ─── Mini Stat Card ───────────────────────────────────────────────────────────
+
+function MiniStat({ label, value, unit, color }: { label: string; value: string | number; unit: string; color: string }) {
+  return (
+    <Card style={s.miniStatCard}>
+      <View style={[s.miniStatDot, { backgroundColor: color }]} />
+      <Text style={s.miniStatLabel}>{label}</Text>
+      <View style={s.miniStatRow}>
+        <Text style={[s.miniStatValue, { color }]}>{value}</Text>
+        <Text style={s.miniStatUnit}>{unit}</Text>
+      </View>
+    </Card>
+  )
+}
+
+// ─── Daily Trend Chart ────────────────────────────────────────────────────────
+
+function DailyTrendChart({ data }: { data: { hour: number; label: string; stressScore: number }[] }) {
+  if (data.length === 0) return null
+
+  const chartWidth = 320
+  const chartHeight = 120
+  const paddingLeft = 30
+  const paddingBottom = 24
+  const paddingTop = 10
+  const barWidth = Math.min(16, (chartWidth - paddingLeft) / data.length - 4)
+  const maxScore = 100
+
+  return (
+    <Card style={s.chartCard}>
+      <View style={s.chartHeader}>
+        <Text style={s.chartTitle}>Daily Stress Trend</Text>
+        <Text style={s.chartSubtitle}>Today</Text>
+      </View>
+      <View style={{ alignItems: 'center' }}>
+        <Svg width={chartWidth} height={chartHeight + paddingBottom}>
+          {/* Y-axis labels */}
+          {[0, 25, 50, 75, 100].map(val => {
+            const y = paddingTop + (1 - val / maxScore) * chartHeight
+            return (
+              <SvgText
+                key={`y-${val}`}
+                x={paddingLeft - 8}
+                y={y + 4}
+                fontSize={9}
+                fill="rgba(255,255,255,0.25)"
+                textAnchor="end"
+              >
+                {val}
+              </SvgText>
+            )
+          })}
+
+          {/* Horizontal grid lines */}
+          {[0, 25, 50, 75, 100].map(val => {
+            const y = paddingTop + (1 - val / maxScore) * chartHeight
+            return (
+              <Line
+                key={`grid-${val}`}
+                x1={paddingLeft}
+                y1={y}
+                x2={chartWidth}
+                y2={y}
+                stroke="rgba(255,255,255,0.05)"
+                strokeWidth={1}
+              />
+            )
+          })}
+
+          {/* Bars */}
+          {data.map((d, i) => {
+            const barHeight = (d.stressScore / maxScore) * chartHeight
+            const x = paddingLeft + i * ((chartWidth - paddingLeft) / data.length) + barWidth / 2
+            const y = paddingTop + chartHeight - barHeight
+            const barColor = getStressColor(d.stressScore)
+
+            return (
+              <React.Fragment key={`bar-${i}`}>
+                <Defs>
+                  <SvgGradient id={`barGrad${i}`} x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor={barColor} stopOpacity="0.9" />
+                    <Stop offset="1" stopColor={barColor} stopOpacity="0.4" />
+                  </SvgGradient>
+                </Defs>
+                <Rect
+                  x={x}
+                  y={y}
+                  width={barWidth}
+                  height={barHeight}
+                  rx={barWidth / 2}
+                  fill={`url(#barGrad${i})`}
+                />
+                {/* X-axis label (every other) */}
+                {i % 2 === 0 && (
+                  <SvgText
+                    x={x + barWidth / 2}
+                    y={paddingTop + chartHeight + 16}
+                    fontSize={9}
+                    fill="rgba(255,255,255,0.3)"
+                    textAnchor="middle"
+                  >
+                    {d.label}
+                  </SvgText>
+                )}
+              </React.Fragment>
+            )
+          })}
+        </Svg>
+      </View>
+    </Card>
+  )
+}
+
+// ─── Home Screen ──────────────────────────────────────────────────────────────
+
+import React from 'react'
 
 export default function HomeScreen() {
-    const insets = useSafeAreaInsets()
-    const [refreshing, setRefreshing] = useState(false)
-    const queryClient = useQueryClient()
+  const insets = useSafeAreaInsets()
+  const {
+    heartRate,
+    hrv,
+    stressScore,
+    stressLevel,
+    dailyTrend,
+    weeklyAverage,
+  } = useStress()
 
-    const { data: items = [] } = useItems()
-    const { data: activityItems = [] } = useActivityFeed()
-    const { data: profile } = useProfile()
+  const greeting = (() => {
+    const h = new Date().getHours()
+    if (h < 12) return 'Good morning'
+    if (h < 17) return 'Good afternoon'
+    return 'Good evening'
+  })()
 
-    const greeting = (() => {
-        const h = new Date().getHours()
-        if (h < 12) return 'Good morning'
-        if (h < 17) return 'Good afternoon'
-        return 'Good evening'
-    })()
+  const stressColor = getStressColor(stressScore)
 
-    const topItems = useMemo(() => items.slice(0, 3), [items])
-    const latestActivity = useMemo(() => activityItems.slice(0, 3), [activityItems])
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: BG }}
+      contentContainerStyle={[s.container, { paddingTop: insets.top + 16, paddingBottom: TAB_BAR_CLEARANCE + 16 }]}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Header */}
+      <View style={s.header}>
+        <Text style={s.greeting}>{greeting}</Text>
+        <Text style={s.subGreeting}>Here's your stress overview</Text>
+      </View>
 
-    const onRefresh = async () => {
-        setRefreshing(true)
-        await queryClient.invalidateQueries({ queryKey: ['items'] })
-        await queryClient.invalidateQueries({ queryKey: ['activity'] })
-        setRefreshing(false)
-    }
+      {/* Live badge */}
+      <View style={s.liveBadgeRow}>
+        <View style={s.liveBadge}>
+          <View style={s.liveDot} />
+          <Text style={s.liveText}>Live Monitoring</Text>
+        </View>
+      </View>
 
-    return (
-        <ScrollView
-            style={{ flex: 1, backgroundColor: BG }}
-            contentContainerStyle={[s.container, { paddingTop: insets.top + 16, paddingBottom: TAB_BAR_CLEARANCE + 16 }]}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
-            showsVerticalScrollIndicator={false}
-        >
-            <View style={s.header}>
-                <Text style={s.greeting}>{greeting}, {(profile?.fullName ?? '').split(' ')[0]}</Text>
-                <Text style={s.subGreeting}>Here's your latest overview.</Text>
-            </View>
+      {/* Circular Stress Score */}
+      <StressGauge score={stressScore} />
 
-            <Text style={s.sectionTitle}>Quick Stats</Text>
-            <View style={s.cardGrid}>
-                {insightCards.map((insight) => (
-                    <Card key={insight.id} style={s.metricCard}>
-                        <Text style={s.metricLabel}>{insight.label}</Text>
-                        <Text style={s.metricValue}>{insight.value}</Text>
-                        <Text style={s.metricDelta}>{insight.delta}</Text>
-                    </Card>
-                ))}
-            </View>
+      {/* Vital Stats */}
+      <Text style={s.sectionTitle}>VITALS</Text>
+      <View style={s.statsRow}>
+        <MiniStat label="Heart Rate" value={heartRate} unit="BPM" color="#f87171" />
+        <MiniStat label="HRV" value={hrv} unit="ms" color="#60a5fa" />
+        <MiniStat label="Weekly Avg" value={weeklyAverage} unit="score" color={ACCENT} />
+      </View>
 
-            <Text style={s.sectionTitle}>Recent Items</Text>
-            {topItems.map((item) => (
-                <Pressable
-                    key={item.id}
-                    onPress={() => router.push(`/detail/${item.id}`)}
-                    style={({ pressed }) => [pressed && { opacity: 0.75 }]}
-                >
-                    <Card style={s.itemCard}>
-                        <View style={s.itemTop}>
-                            <View style={s.itemTitleWrap}>
-                                <Text style={s.cardTitle}>{item.name}</Text>
-                                <Text style={s.cardSub}>{item.owner} | Updated {item.updatedAt}</Text>
-                            </View>
-                            <StatusBadge status={item.status} label={statusLabel(item.status)} />
-                        </View>
+      {/* Daily Trend Chart */}
+      <DailyTrendChart data={dailyTrend} />
 
-                        <Text style={[s.cardSub, { marginTop: 8 }]}>{item.summary}</Text>
-
-                        <View style={s.itemMeta}>
-                            <Text style={s.metaValue}>{item.completion}% complete</Text>
-                            <Text style={s.metaValue}>Health {item.health}</Text>
-                            <Text style={s.metaValue}>{item.activeUsers} active</Text>
-                        </View>
-                    </Card>
-                </Pressable>
-            ))}
-
-            <Text style={s.sectionTitle}>Recent Activity</Text>
-            <Card style={s.activityCard}>
-                {latestActivity.map((activity, index) => (
-                    <View key={activity.id} style={[s.activityRow, index < latestActivity.length - 1 && s.activityDivider]}>
-                        <View style={s.activityIconWrap}>
-                            <Ionicons name={activityIcon(activity.kind)} size={14} color={ACCENT} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={s.activityTitle}>{activity.title}</Text>
-                            <Text style={s.cardSub}>{activity.detail}</Text>
-                        </View>
-                        <Text style={s.activityTime}>{activity.timeAgo}</Text>
-                    </View>
-                ))}
-            </Card>
-        </ScrollView>
-    )
+      {/* Quick tips */}
+      <Card style={s.tipCard}>
+        <View style={s.tipHeader}>
+          <Text style={s.tipIcon}>💡</Text>
+          <Text style={s.tipTitle}>AI Insight</Text>
+        </View>
+        <Text style={s.tipText}>
+          {stressScore <= 25
+            ? "You're doing great! Your stress levels are low. Keep up the healthy habits."
+            : stressScore <= 50
+            ? 'Moderate stress detected. Consider a quick breathing exercise to stay balanced.'
+            : stressScore <= 75
+            ? 'Your stress is elevated. Try a 5-minute body scan or guided breathing session.'
+            : 'High stress alert! Take a break now. Open the Relief tab for immediate exercises.'}
+        </Text>
+      </Card>
+    </ScrollView>
+  )
 }
 
-function activityIcon(kind: 'milestone' | 'comment' | 'alert' | 'review') {
-    switch (kind) {
-        case 'milestone':
-            return 'flag-outline'
-        case 'comment':
-            return 'chatbubble-ellipses-outline'
-        case 'alert':
-            return 'alert-circle-outline'
-        case 'review':
-            return 'checkmark-done-outline'
-        default:
-            return 'ellipse-outline'
-    }
-}
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-    container: { paddingHorizontal: 20, gap: 14 },
-    header: { gap: 4, marginBottom: 4 },
-    greeting: { fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.6 },
-    subGreeting: { fontSize: 14, color: TEXT_SECONDARY },
-    sectionTitle: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: TEXT_TERTIARY,
-        letterSpacing: 0.8,
-        textTransform: 'uppercase',
-        marginTop: 4,
-    },
-    cardGrid: { flexDirection: 'row', gap: 10 },
-    metricCard: { flex: 1, gap: 3, paddingVertical: 12, paddingHorizontal: 12 },
-    metricLabel: { fontSize: 11, color: TEXT_TERTIARY, fontWeight: '600' },
-    metricValue: { fontSize: 17, color: '#fff', fontWeight: '700', letterSpacing: -0.2 },
-    metricDelta: { fontSize: 11, color: ACCENT },
-    itemCard: { gap: 2, paddingVertical: 14 },
-    itemTop: { flexDirection: 'row', gap: 10 },
-    itemTitleWrap: { flex: 1, gap: 3 },
-    cardTitle: { fontSize: 15, fontWeight: '700', color: '#fff' },
-    cardSub: { fontSize: 12, color: TEXT_SECONDARY, lineHeight: 18 },
-    itemMeta: { flexDirection: 'row', gap: 12, marginTop: 10, flexWrap: 'wrap' },
-    metaValue: { fontSize: 11, color: TEXT_TERTIARY },
-    activityCard: { paddingVertical: 4, paddingHorizontal: 0 },
-    activityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
-    activityDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.08)' },
-    activityIconWrap: {
-        width: 28,
-        height: 28,
-        borderRadius: 9,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: ACCENT_DIM,
-    },
-    activityTitle: { fontSize: 13.5, color: '#fff', fontWeight: '600', marginBottom: 1 },
-    activityTime: { fontSize: 11, color: TEXT_TERTIARY },
+  container: { paddingHorizontal: 20, gap: 14 },
+  header: { gap: 4, marginBottom: 0 },
+  greeting: { fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.6 },
+  subGreeting: { fontSize: 14, color: TEXT_SECONDARY },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: TEXT_TERTIARY,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginTop: 4,
+  },
+  liveBadgeRow: { alignItems: 'center' },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(74, 222, 128, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#4ade80',
+  },
+  liveText: {
+    fontSize: 12,
+    color: '#4ade80',
+    fontWeight: '600',
+  },
+  statsRow: { flexDirection: 'row', gap: 10 },
+  miniStatCard: { flex: 1, padding: 12, gap: 4 },
+  miniStatDot: { width: 6, height: 6, borderRadius: 3 },
+  miniStatLabel: { fontSize: 10, color: TEXT_TERTIARY, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
+  miniStatRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  miniStatValue: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  miniStatUnit: { fontSize: 10, color: TEXT_TERTIARY, fontWeight: '500' },
+  chartCard: { padding: 16, gap: 10 },
+  chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chartTitle: { fontSize: 15, fontWeight: '700', color: TEXT_PRIMARY },
+  chartSubtitle: { fontSize: 12, color: TEXT_TERTIARY },
+  tipCard: {
+    padding: 16,
+    gap: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: ACCENT,
+  },
+  tipHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tipIcon: { fontSize: 18 },
+  tipTitle: { fontSize: 14, fontWeight: '700', color: TEXT_PRIMARY },
+  tipText: { fontSize: 13, color: TEXT_SECONDARY, lineHeight: 20 },
 })

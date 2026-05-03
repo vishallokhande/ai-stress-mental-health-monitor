@@ -1,13 +1,14 @@
 /**
- * Tabs layout — add new tabs by:
- *   1. Create app/(tabs)/<name>.tsx
- *   2. Add a tabBarIcon and tabBarLabel in the <Tabs.Screen> below.
- *
- * The custom TabBar renders itself — its tab list is driven entirely by
- * the screens registered here.
+ * Tabs layout — StressWatch AI Stress Monitor
+ * 
+ * Four main tabs:
+ *   1. Home — Real-time stress dashboard
+ *   2. Relief — Breathing exercises & CBT techniques
+ *   3. Journal — Stress journal with mood tags
+ *   4. Insights — Weekly AI-powered insights
  */
 import { Tabs } from 'expo-router'
-import { House, Compass, Bell, CircleUser } from 'lucide-react-native'
+import { Heart, Wind, BookOpen, BarChart3 } from 'lucide-react-native'
 import TabBar, { TAB_BAR_HEIGHT } from '@/components/TabBar'
 import { BG } from '@/lib/theme'
 
@@ -18,7 +19,6 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: BG },
-        // Extra bottom padding so content clears the floating tab bar
         tabBarStyle: { height: TAB_BAR_HEIGHT },
       }}
     >
@@ -27,37 +27,37 @@ export default function TabsLayout() {
         options={{
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <House size={size} color={color} strokeWidth={1.6} />
+            <Heart size={size} color={color} strokeWidth={1.6} />
           ),
         }}
       />
 
       <Tabs.Screen
-        name="explore"
+        name="relief"
         options={{
-          tabBarLabel: 'Explore',
+          tabBarLabel: 'Relief',
           tabBarIcon: ({ color, size }) => (
-            <Compass size={size} color={color} strokeWidth={1.6} />
+            <Wind size={size} color={color} strokeWidth={1.6} />
           ),
         }}
       />
 
       <Tabs.Screen
-        name="activity"
+        name="journal"
         options={{
-          tabBarLabel: 'Activity',
+          tabBarLabel: 'Journal',
           tabBarIcon: ({ color, size }) => (
-            <Bell size={size} color={color} strokeWidth={1.6} />
+            <BookOpen size={size} color={color} strokeWidth={1.6} />
           ),
         }}
       />
 
       <Tabs.Screen
-        name="profile"
+        name="insights"
         options={{
-          tabBarLabel: 'Profile',
+          tabBarLabel: 'Insights',
           tabBarIcon: ({ color, size }) => (
-            <CircleUser size={size} color={color} strokeWidth={1.6} />
+            <BarChart3 size={size} color={color} strokeWidth={1.6} />
           ),
         }}
       />
