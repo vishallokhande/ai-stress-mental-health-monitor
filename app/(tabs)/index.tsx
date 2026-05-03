@@ -99,9 +99,7 @@ function StressGauge({ score }: { score: number }) {
             strokeDasharray={`${CIRCUMFERENCE}`}
             strokeDashoffset={strokeDashoffset}
             strokeLinecap="round"
-            rotation="-90"
-            originX={GAUGE_SIZE / 2}
-            originY={GAUGE_SIZE / 2}
+            transform={`rotate(-90, ${GAUGE_SIZE / 2}, ${GAUGE_SIZE / 2})`}
           />
         </Svg>
 
